@@ -6,7 +6,9 @@
 ieInit();
 piDockerConfig();
 
-dockerWrapper = dockerWrapper('dockerContainerName','vistalab/pbrt-v4-cpu-arm',...
+% Henryk's settings are Mac specific
+if ismac
+thisD = dockerWrapper('dockerContainerName','vistalab/pbrt-v4-cpu-arm',...
     'localRender',true,...
     'gpuRendering',false,...
     'remoteMachine','mux.stanford.edu',...
@@ -16,14 +18,16 @@ dockerWrapper = dockerWrapper('dockerContainerName','vistalab/pbrt-v4-cpu-arm',.
     'localImageName', 'vistalab/pbrt-v4-cpu-arm',...
     'relativeScenePath','/iset3d/',...
     'remoteResources',false);
-
+else
+    % Use the current user prefs
+    dockerWrapper = dockerWrapper();
+end
 
 %% Create a scene with a Macbeth Chart.
 macbeth = piCreateMacbethChart();
 macbeth.set('pixel samples', 128);
-dockerWrapper.reset;
 
-macbethScene = piWRS(macbeth, 'ourDocker', dockerWrapper, 'show', false, 'meanluminance', -1);
+macbethScene = piWRS(macbeth, 'ourDocker', thisD, 'show', false, 'meanluminance', -1);
 sceneShowImage(macbethScene);
 
 %% Create sea water medium
@@ -36,7 +40,7 @@ cLarge = 0.1;
 seawaterMacbeth = piSceneSubmerge(macbeth, seawater, 'sizeX', 50, 'sizeY', 50, 'sizeZ', 50);
 seawaterMacbeth.set('outputfile',fullfile(piRootPath,'local','SeawaterMacbeth','SeawaterMacbeth.pbrt'));
 
-seawaterMacbethScene = piWRS(seawaterMacbeth, 'ourDocker', dockerWrapper, 'show', false, 'meanluminance', -1);
+seawaterMacbethScene = piWRS(seawaterMacbeth, 'ourDocker', thisD, 'show', false, 'meanluminance', -1);
 sceneShowImage(seawaterMacbethScene);
 
 
@@ -44,7 +48,7 @@ sceneShowImage(seawaterMacbethScene);
 freshwaterMacbeth = piSceneSubmerge(macbeth, freshwater, 'sizeX', 50, 'sizeY', 50, 'sizeZ', 50);
 freshwaterMacbeth.set('outputfile',fullfile(piRootPath,'local','FreshwaterMacbeth','FreshwaterMacbeth.pbrt'));
 
-freshwaterMacbethScene = piWRS(freshwaterMacbeth, 'ourDocker', dockerWrapper, 'show', false, 'meanluminance', -1);
+freshwaterMacbethScene = piWRS(freshwaterMacbeth, 'ourDocker', thisD, 'show', false, 'meanluminance', -1);
 sceneShowImage(freshwaterMacbethScene);
 
 figure;
@@ -58,7 +62,7 @@ seawater = piWaterMediumCreate('seawater', 'waterSct', mediumScatter, 'cSmall', 
 surfaceMacbeth = piSceneSubmerge(macbeth, seawater, 'sizeX', 8, 'sizeY', 8, 'sizeZ', 8);
 surfaceMacbeth.set('outputfile',fullfile(piRootPath,'local','WaterSurfaceMacbeth','WaterSurfaceMacbeth.pbrt'));
 
-surfaceMacbethScene = piWRS(surfaceMacbeth, 'ourDocker', dockerWrapper, 'show', false, 'meanluminance', -1);
+surfaceMacbethScene = piWRS(surfaceMacbeth, 'ourDocker', thisD, 'show', false, 'meanluminance', -1);
 sceneShowImage(surfaceMacbethScene);
 
 
@@ -69,7 +73,7 @@ for zz = 1:numel(depths)
     uwMacbeth = piSceneSubmerge(macbeth, seawater, 'sizeX', 50, 'sizeY', 50, 'sizeZ', depths(zz));
     uwMacbeth = sceneSet(uwMacbeth,'name',sprintf('Depth %.1f',depths(zz)));
 
-    uwMacbethScene    = piWRS(uwMacbeth, 'ourDocker', dockerWrapper, 'show', false, 'meanluminance', -1);
+    uwMacbethScene    = piWRS(uwMacbeth, 'ourDocker', thisD, 'show', false, 'meanluminance', -1);
     sceneShowImage(uwMacbethScene);
     
 end

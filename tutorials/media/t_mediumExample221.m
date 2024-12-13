@@ -2,115 +2,60 @@
 % a medium, and how to render the scene submerged in that medium.
 %
 % Henryk Blasinski, 2023
-close all;
-clear all;
-clc;
-%%
+
 ieInit
 piDockerConfig();
 
+
 %% Create a scene with a Macbeth Chart.
 macbeth = piCreateMacbethChart();
+
 macbeth.set('pixel samples', 128);
+dockerWrapper.reset;
 
-% Define rendering parameters
+thisD = dockerWrapper();
+macbethScene = piWRS(macbeth, 'ourDocker', thisD, 'show', false, 'meanluminance', -1);
+sceneShowImage(macbethScene);
 
-%{
-dw = dockerWrapper('dockerContainerName','digitalprodev/pbrt-v4-gpu',...
-    'localRender',false,...
-    'gpuRendering',false,...
-    'remoteMachine','mux.stanford.edu',...
-    'remoteUser','henryk',...
-    'remoteRoot','/home/henryk',...
-    'remoteImage','digitalprodev/pbrt-v4-cpu',...
-    'relativeScenePath','/iset3d/',...
-    'remoteResources',false);
-%}
+%% Create sea water medium
 
-%% Here is the code to set Docker up to run on a local GPU
-%  My laptop doesn't have an Nvidia GPU, so I can't completely
-%  test it, so let me know if it works!
-%{
-try
-    ourGPU = gpuDevice();
-    if str2double(ourGPU.ComputeCapability) >= 5.3 % minimum for PBRT on GPU
-        [status,result] = system('docker pull digitalprodev/pbrt-v4-gpu-ampere-mux');    
-        dw = dockerWrapper('dockerContainerName','digitalprodev/pbrt-v4-gpu-ampere-mux',...
-            'localImage', 'digitalprodev/pbrt-v4-gpu-ampere-mux', ...
-            'localRender',true,...
-            'gpuRendering',true,...
-            'remoteResources',false);
-        haveGPU = true;
-    else
-        fprintf('GPU Compute is: %d\n',ourGPU.computeCapability);
-        haveGPU = false;
-    end
-catch
-    haveGPU = false;
-end
+mediumScatter = false;
 
-if ~haveGPU
-    [status,result] = system('docker pull digitalprodev/pbrt-v4-cpu');
-    dw = dockerWrapper('dockerContainerName','camerasimulation/pbrt-v4-cpu-arm',...
-        'localRender',true,...
-        'gpuRendering',false,...
-        'remoteImage','camerasimulation/pbrt-v4-cpu-arm',...
-        'localImageName','camerasimulation/pbrt-v4-cpu-arm',...
-        'remoteResources',false);
-end
-%}
+[seawater, seawaterProp] = piWaterMediumCreate('seawater', 'waterSct', mediumScatter);
+seawaterMacbeth = piSceneSubmerge(macbeth, seawater, 'sizeX', 50, 'sizeY', 50, 'sizeZ', 5);
+seawaterMacbeth.set('outputfile',fullfile(piRootPath,'local','SeawaterMacbeth','SeawaterMacbeth.pbrt'));
 
-macbethScene = piWRS(macbeth, 'meanluminance', -1);
-
-% Create an optical image
-oi = oiCreate;
-oi = oiCompute(oi, macbethScene);
-ieAddObject(oi);
-oiWindow();
-
-% create a camera sensor
-sensor = sensorCreate;
-sensor = sensorSet(sensor,'integrationTime',8.5774e-04);
-sensor = sensorSet(sensor, 'noise flag', -1);
-sensor = sensorSet(sensor, 'cols', recipeGet(macbeth,'film x resolution'));
-sensor = sensorSet(sensor, 'rows', recipeGet(macbeth,'film y resolution'));
-sensor = sensorCompute(sensor, oi);
-ieAddObject(sensor);
-sensorWindow();
-
-% Sample RGB data from the sensor for each Macbeth patch.
-% [cornerPoints, obj, rect] = chartCornerpoints(sensor);
-cornerPoints = [1 458;637 458;638 22;4 21];
-[rects, mLocs, pSize] = chartRectangles(cornerPoints,4,6);
-pixelValuesOrg = chartRectsData(sensor, mLocs, 5, false, 'volts');
+seawaterMacbethScene = piWRS(seawaterMacbeth, 'ourDocker', thisD, 'show', false, 'meanluminance', -1);
+sceneShowImage(seawaterMacbethScene);
 
 
-% Build a linear image formation model
-responseFunction = sensorGet(sensor, 'spectral QE');
-reflectance = macbethReadReflectance(sensorGet(sensor,'wave'));
-illuminant = ones(size(sensorGet(sensor,'wave')));
+[freshwater, freshwaterProp] = piWaterMediumCreate('freshwater', 'cPlankton', 10, 'waterSct', mediumScatter);
+freshwaterMacbeth = piSceneSubmerge(macbeth, freshwater, 'sizeX', 50, 'sizeY', 50, 'sizeZ', 5);
+freshwaterMacbeth.set('outputfile',fullfile(piRootPath,'local','FreshwaterMacbeth','FreshwaterMacbeth.pbrt'));
 
-% PBRT specifies spectral units in terms of energy, but sensor response is
-% proportional to the number of quanta. We care about relative values,
-% hence we normalize by the maximum.
-illuminant = Energy2Quanta(sceneGet(sensor,'wave'),illuminant);
-illuminant = illuminant / max(illuminant(:));
-
-pixelEstimatesOrg = reflectance'*diag(illuminant)*responseFunction;
-
-% 'pixelEstimates' from the linear image formation model should be the same
-% (up to a single scale factor) as the 'pixelValues' from camera
-% simulation. If this is the case the scatter plot of one vs. the other
-% should fall on a line.
+freshwaterMacbethScene = piWRS(freshwaterMacbeth, 'ourDocker', thisD, 'show', false, 'meanluminance', -1);
+sceneShowImage(freshwaterMacbethScene);
 
 figure;
 hold on; grid on; box on;
-plot(pixelValuesOrg, pixelEstimatesOrg,'.');
-xlabel('From Simulation');
-ylabel('From linear system');
-title('Pixel values');
+plot([seawaterProp.absorption(:), freshwaterProp.absorption(:)]);
+legend('seawater','freshwater');
 
 
+% The depth of the water we are seeing through
+depths = logspace(0.1,2,3);
+for zz = 1:numel(depths)
+
+    uwMacbeth = piSceneSubmerge(macbeth, seawater, 'sizeX', 50, 'sizeY', 50, 'sizeZ', depths(zz));
+    uwMacbeth = sceneSet(uwMacbeth,'name',sprintf('Depth %.1f',depths(zz)));
+
+    uwMacbethScene    = piWRS(uwMacbeth, 'ourDocker', thisD, 'show', false, 'meanluminance', -1);
+    sceneShowImage(uwMacbethScene);
+    
+end
+
+%{
+% The below doesn't run for me. -- David C.
 %%
 % HB created a full representation model of scattering that has a number of
 % different
@@ -193,3 +138,4 @@ xlabel('From Simulation');
 ylabel('From linear system');
 title('Pixel values');
 
+%}
